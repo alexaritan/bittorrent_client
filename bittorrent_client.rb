@@ -27,6 +27,8 @@ file = BEncode.load_file "ubuntu-14.10-desktop-amd64.iso.torrent"
 addr = file["announce"]
 info = file["info"]
 info_hash = Digest::SHA1.new.digest(info.bencode)
+file_length = info["length"]
+file_name = info["name"]
 id = "12345439123454321230"
 params = {
 	info_hash: info_hash,
@@ -105,165 +107,140 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 
 		#Prepare variables for REQUEST message for when peer unchokes you.
 		piece_length = info["piece length"].to_i
+		if file_length%piece_length == 0
+			number_of_pieces = file_length/piece_length
+		else
+			number_of_pieces = file_length/piece_length + 1
+		end
+
+		size_of_last_piece = file_length%piece_length
 		remaining_size_of_piece = piece_length
 		piece_index = 0 #Increment this by 1 (or to next available piece) after each piece is finished.
 		begin_block = 0 #Increment this by block_size after each block request.
 		block_size = 2**14 #This stays constant.
+		@block_storage = []
+		bitfield_row_that_corresponds_with_piece_index = piece_index/8
+		bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
 		puts "Piece length: #{piece_length}"
 		#Parse incoming messages and handle them appropriately.
-		while true do
-			puts "Looping"
-			message_length = @connection.read(4).unpack("N")[0]
-
-			if message_length == 0
-				#puts "Keep alive received"
-			elsif message_length > 0
-				message_id = @connection.read(1).bytes.to_a[0]
-				message_body = @connection.read(message_length-1)
-
-				#TODO parse the message payload for every message otherwise following messages are thrown off.
-				if message_id == @message_ids[:choke]
-					puts "Choke received"
-					state[:i_am_unchoked] = false
-				elsif message_id == @message_ids[:unchoke]
-					puts "Unchoke received"
-					state[:i_am_unchoked] = true
-				elsif message_id == @message_ids[:interested]
-					puts "Interested received"
-				elsif message_id == @message_ids[:not_interested]
-					puts "Not interested received"
-				elsif message_id == @message_ids[:have]
-					puts "Have received"
-				elsif message_id == @message_ids[:bitfield]
-					puts "Bitfield received"
-				elsif message_id == @message_ids[:request]
-					puts "Request received (uhh, what?)"
-				elsif message_id == @message_ids[:piece]
-					puts "BLOCK RECEIVED!!!"
-					#TODO parse and store the PIECE message.
-					begin_block += block_size
-					remaining_size_of_piece -= block_size
-				elsif message_id == @message_ids[:cancel]
-					puts "Cancel received"
-				elsif message_id == @message_ids[:port]
-					puts "Port received"
-				else
-					puts "Unknown message received #{message_id}"
-				end
-
-				if state[:i_am_unchoked]
-					#Encode parameters for REQUEST message.
-					request_message_length = [13].pack("N")
-					request_message_id = "\6"
-					request_piece_index = [piece_index].pack("N")
-					request_begin_block = [begin_block].pack("N")
-					request_block_size = [block_size].pack("N")
-
-					#Send REQUEST message.
-					if remaining_size_of_piece >= block_size
-						@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
-						puts "Sent request of #{block_size}"
-					elsif remaining_size_of_piece == 0
-						#Do something here - you have the whole piece.
-						#Validate the piece, store it, and move onto the next one.
-						puts "ENTIRE PIECE RECEIVED!!"
-						break #TODO GET RID OF THIS BREAK!!!!!!!!!!!!!
-						#IT IS PURELY FOR TESTING!!!
-					else
-						@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + remaining_size_of_piece)
-						puts "Sent request of #{remaining_size_of_piece}"
-					end
-				else
-					#Send INTERESTED message to the connected peer.
-					@connection.write("\0\0\0\1\2") #First 4 bytes = 1, meaning length of payload = 1 byte.  5th byte is id = 2, which corresponds to INTERESTED message.
-					puts "Sent interested"
-				end
-			end
-		end
-
-
-
-
-
-
-
-
-
-
-=begin
-	THIS IS ALL OLD CODE THAT I AM WORKING ON REWRITING!!!
-
-		#Wait for UNCHOKE message.  TODO implement time limit for this loop.
-		#TODO you may need to also UNCHOKE other peers.
-		message_id = -1
-		while message_id != 1 && message_id != nil do
-			message_length = @connection.read(4).unpack("N")[0]
-			message_id = @connection.read(1).bytes.to_a[0]
-		end
-		puts "Unchoked by peer"
-
-		#Prepare necessary information for REQUEST message.
-		#TODO find out how to handle the last piece of a file.
-		piece_length = info["piece length"].to_i
-		remaining_size_of_piece = piece_length
-		piece_index = 0 #Increment this by 1 (or to next available piece) after each piece is finished.
-		begin_block = 0 #Increment this by block_size after each block request.
-		block_size = 2**14 #This stays constant.
-		
-		#Encode parameters for REQUEST message.
-		request_message_length = [13].pack("N")
-		request_message_id = "\6"
-		request_piece_index = [piece_index].pack("N")
-		request_begin_block = [begin_block].pack("N")
-		request_block_size = [block_size].pack("N")
-
-=begin
-			I AM CURRENTLY HAVING A PROBLEM WHERE AFTER REQUESTING
-			ONE BLOCK OF THE FILE, I AM BEING CHOKED BY MY PEER.
-
-			YOU NEED TO CHECK FOR OTHER MESSAGE IDS BESIDES JUST 7 BELOW
-			AND HANDLE THEM APPROPRIATELY!!!
-
-		while remaining_size_of_piece > 0 do #Keep requesting blocks until the remaining part of the piece is smaller than the default block size.
-			message_id = -1
-			#puts "Downloading piece #{piece_index}"
-
-			#Send REQUEST message.
-			if remaining_size_of_piece >= block_size
-				@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
-			else
-				@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + remaining_size_of_piece)
-			end
-=begin
-			This is old code.  It produces a problem where after the first piece
-			is requested, the connection is choked, and then all following
-			messages are parsed incorrectly because the code depends on them
-			being PIECE messages when they aren't.
-
-			while message_id != 7 && message_id != nil do
+		while true do #TODO change to "while there are still pieces left".
+			if @pieces_i_have[piece_index] != 1 && bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] == 1
+				puts "Looking for incoming message"
 				message_length = @connection.read(4).unpack("N")[0]
-				message_id = @connection.read(1).bytes.to_a[0]
-				puts "Message id: #{message_id}"
+
+				if message_length == 0
+					#puts "Keep alive received"
+				elsif message_length > 0
+					message_id = @connection.read(1).bytes.to_a[0]
+
+					if message_id == @message_ids[:choke]
+						puts "Choke received"
+						state[:i_am_unchoked] = false
+					elsif message_id == @message_ids[:unchoke]
+						puts "Unchoke received"
+						state[:i_am_unchoked] = true
+					elsif message_id == @message_ids[:interested]
+						puts "Interested received"
+						state[:peer_is_interested] = true
+					elsif message_id == @message_ids[:not_interested]
+						puts "Not interested received"
+						state[:peer_is_interested] = false
+					elsif message_id == @message_ids[:have]
+						puts "Have received"
+						#TODO implement suppost for HAVE messages.
+						message_body = @connection.read(message_length-1)
+					elsif message_id == @message_ids[:bitfield]
+						puts "Bitfield received"
+						message_body = @connection.read(message_length-1)
+					elsif message_id == @message_ids[:request]
+						puts "Request received (uhh, what?)"
+						message_body = @connection.read(message_length-1)
+					elsif message_id == @message_ids[:piece]
+						puts "Received block #{begin_block} in piece #{piece_index}"
+						begin_block += (message_length - 9)
+						remaining_size_of_piece -= (message_length - 9)
+
+						#Parse the returned block.
+						returned_start_index_of_block = @connection.read(4)
+						returned_block_offset = @connection.read(4)
+						returned_block = @connection.read(message_length - 9)
+						@block_storage[@block_storage.length] = returned_block
+
+						if remaining_size_of_piece == 0
+							puts "ENTIRE PIECE #{piece_index} RECEIVED!!!"
+							@pieces_i_have[piece_index] = 1
+							piece_index += 1
+							begin_block = 0
+							bitfield_row_that_corresponds_with_piece_index = piece_index/8
+							bitfield_column_that_corresponds_with_piece_index = piece_index%8
+							#TODO validate the piece and then write @block_storage to a file after each piece is received.
+							File.open("#{file_name}", "a") do |file|
+								@block_storage.each do |block|
+									file.puts block
+								end
+							end
+							@block_storage = []
+							if piece_index == number_of_pieces - 1
+								remaining_size_of_piece = size_of_last_piece
+							elsif piece_index == number_of_pieces
+								break
+							else
+								remaining_size_of_piece = piece_length
+							end
+						end
+					elsif message_id == @message_ids[:cancel]
+						puts "Cancel received"
+						message_body = @connection.read(message_length-1)
+					elsif message_id == @message_ids[:port]
+						puts "Port received"
+						message_body = @connection.read(message_length-1)
+					else
+						puts "Unknown message received: ID #{message_id}"
+					end
+
+					if state[:i_am_unchoked]
+						#Encode parameters for REQUEST message.
+						request_message_length = [13].pack("N")
+						request_message_id = "\6"
+						request_piece_index = [piece_index].pack("N")
+						request_begin_block = [begin_block].pack("N")
+						request_block_size = [block_size].pack("N")
+
+						#Send REQUEST message.
+						if remaining_size_of_piece >= block_size
+							@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
+							puts "Sent request of #{block_size} for piece #{piece_index}"
+						else
+							@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + remaining_size_of_piece)
+							puts "Sent request of #{remaining_size_of_piece}"
+						end
+					else
+						#Send INTERESTED message to the connected peer.
+						@connection.write("\0\0\0\1\2") #First 4 bytes = 1, meaning length of payload = 1 byte.  5th byte is id = 2, which corresponds to INTERESTED message.
+						puts "Sent interested"
+					end
+				end
+			elsif @pieces_i_have[piece_index] == 1
+				piece_index += 1
+				bitfield_row_that_corresponds_with_piece_index = piece_index/8
+				bitfield_column_that_corresponds_with_piece_index = piece_index%8
 			end
-
-
-			
-
-			puts "Storing block..." #TODO You don't actually store the block yet.
-			remaining_size_of_piece -= block_size
-			begin_block += block_size
-			puts "Remaining piece size: #{remaining_size_of_piece}"
 		end
-
-		#TODO check the hash of a piece when it is done downloading.
-		#Row*8 + column of the bitfield to check if the peer as the piece.		
-=end
-
+		@finished = true
+		@pieces_i_have.each do |piece|
+			@finished = false if piece == 0
+		end
 
 		@connection.close
+		break if @finished
 	rescue => exception
 		puts exception
 		@connection.close if @connection != nil
 	end
 }
+
+#TODO right now you just write to the end of the file whenever you get a piece,
+#but what if the first peer doesn't have all of the pieces and you get some of
+#them from the second peer?  Those pieces would be written at the end when
+#they shouldn't be.  Fix that.
