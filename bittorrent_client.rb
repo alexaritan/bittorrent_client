@@ -35,8 +35,8 @@ params = {
 	peer_id: id,
 	port: "6881",
 	uploaded: "0",
-	downloaded: "0",
-	left: "100000", #Might want to edit this, and maybe a few others.
+	downloaded: "0", #TODO might need to update this with each handshake you send.
+	left: "100000", #TODO might want to edit this, and maybe a few others.
 	compact: "1",
 	no_peer_id: "0",
 	event: "started"
@@ -119,6 +119,8 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		begin_block = 0 #Increment this by block_size after each block request.
 		block_size = 2**14 #This stays constant.
 		@block_storage = []
+		@pieces_to_write_to_file_later = {}
+		@next_piece_to_write_to_file = 0
 		bitfield_row_that_corresponds_with_piece_index = piece_index/8
 		bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
@@ -173,17 +175,33 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 							#TODO validate the piece and then write @block_storage to a file after each piece is received.
 							puts "RECEIVED ENTIRE PIECE #{piece_index}!!!"
 							@pieces_i_have[piece_index] = 1
+							if @next_piece_to_write_to_file == piece_index
+								File.open("#{file_name}", "a") do |file|
+									@block_storage.each do |block|
+										file.write block
+									end
+								end
+								@next_piece_to_write_to_file += 1
+
+								#Check to see if the piece after the one you just stored has already
+								#been downloaded and is waiting to be written to file.
+								while @pieces_to_write_to_file_later[@next_piece_to_write_to_file] != nil do
+									File.open("#{file_name}", "a") do |file|
+										@pieces_to_write_to_file_later[@next_piece_to_write_to_file].each do |block|
+											file.write block
+										end
+									end
+									@pieces_to_write_to_file_later[@next_piece_to_write_to_file] = nil
+									@next_piece_to_write_to_file += 1
+								end
+							else
+								piece_to_write = @block_storage
+								@pieces_to_write_to_file_later[piece_index: piece_to_write] #Stores the array containing the entire piece at the index equivalent to the piece index.
+							end
 							piece_index += 1
 							begin_block = 0
 							bitfield_row_that_corresponds_with_piece_index = piece_index/8
 							bitfield_column_that_corresponds_with_piece_index = piece_index%8
-							
-							#Write the piece to file.
-							File.open("#{file_name}", "a") do |file|
-								@block_storage.each do |block|
-									file.puts block
-								end
-							end
 							@block_storage = []
 							if piece_index == number_of_pieces - 1
 								remaining_size_of_piece = size_of_last_piece
@@ -225,7 +243,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						puts "Sent interested"
 					end
 				end
-			elsif @pieces_i_have[piece_index] == 1
+			else
 				piece_index += 1
 				bitfield_row_that_corresponds_with_piece_index = piece_index/8
 				bitfield_column_that_corresponds_with_piece_index = piece_index%8
