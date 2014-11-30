@@ -5,9 +5,9 @@ require 'net/http'
 require 'ipaddr'
 
 #Keep track of pieces you have stored.  Each index in the array
-#corresponds to the index of the piece (ie. pieces_i_have[0]
-#corresponds to piece 0).
-@pieces_i_have = []
+#corresponds to the index of the piece (ie. pieces_i_have[0] = 1
+#corresponds to having piece 0).
+@pieces_i_have = [] #This is an array of 0s and 1s letting me know which pieces I have written to file.
 @message_ids = {
 	keep_alive: -1,
 	choke: 0,
@@ -97,7 +97,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 			puts "No bitfield!"
 		else
 			bitfield = @connection.read(bitfield_length - 1).unpack("B8" * (bitfield_length-1))
-			puts "Initial bitfield received"
+			puts "Received initial bitfield"
 			#TODO implement support for incomplete bitfields followed by HAVE messages.  This would require you to set some additional bits in the bitfield according to the received HAVE messages.
 		end
 
@@ -122,7 +122,6 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		bitfield_row_that_corresponds_with_piece_index = piece_index/8
 		bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
-		puts "Piece length: #{piece_length}"
 		#Parse incoming messages and handle them appropriately.
 		while true do #TODO change to "while there are still pieces left".
 			if @pieces_i_have[piece_index] != 1 && bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] == 1
@@ -130,51 +129,56 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 				message_length = @connection.read(4).unpack("N")[0]
 
 				if message_length == 0
-					#puts "Keep alive received"
+					#puts "Received keep-alive"
 				elsif message_length > 0
 					message_id = @connection.read(1).bytes.to_a[0]
 
 					if message_id == @message_ids[:choke]
-						puts "Choke received"
+						puts "Received choke"
 						state[:i_am_unchoked] = false
 					elsif message_id == @message_ids[:unchoke]
-						puts "Unchoke received"
+						puts "Received unchoke"
 						state[:i_am_unchoked] = true
 					elsif message_id == @message_ids[:interested]
-						puts "Interested received"
+						puts "Received interested"
 						state[:peer_is_interested] = true
 					elsif message_id == @message_ids[:not_interested]
-						puts "Not interested received"
+						puts "Received not interested"
 						state[:peer_is_interested] = false
 					elsif message_id == @message_ids[:have]
-						puts "Have received"
+						puts "Received have"
 						#TODO implement suppost for HAVE messages.
 						message_body = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:bitfield]
-						puts "Bitfield received"
+						puts "Received bitfield"
+						#TODO implement support for a bitfield received here.
 						message_body = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:request]
-						puts "Request received (uhh, what?)"
+						puts "Received request (uhh, what?)"
 						message_body = @connection.read(message_length-1)
+						#TODO implement support for requests.
+						#This is a very, very LOW priority.
 					elsif message_id == @message_ids[:piece]
 						puts "Received block #{begin_block} in piece #{piece_index}"
 						begin_block += (message_length - 9)
 						remaining_size_of_piece -= (message_length - 9)
 
 						#Parse the returned block.
-						returned_start_index_of_block = @connection.read(4)
+						returned_piece_index = @connection.read(4)
 						returned_block_offset = @connection.read(4)
 						returned_block = @connection.read(message_length - 9)
 						@block_storage[@block_storage.length] = returned_block
 
 						if remaining_size_of_piece == 0
-							puts "ENTIRE PIECE #{piece_index} RECEIVED!!!"
+							#TODO validate the piece and then write @block_storage to a file after each piece is received.
+							puts "RECEIVED ENTIRE PIECE #{piece_index}!!!"
 							@pieces_i_have[piece_index] = 1
 							piece_index += 1
 							begin_block = 0
 							bitfield_row_that_corresponds_with_piece_index = piece_index/8
 							bitfield_column_that_corresponds_with_piece_index = piece_index%8
-							#TODO validate the piece and then write @block_storage to a file after each piece is received.
+							
+							#Write the piece to file.
 							File.open("#{file_name}", "a") do |file|
 								@block_storage.each do |block|
 									file.puts block
@@ -190,13 +194,13 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 							end
 						end
 					elsif message_id == @message_ids[:cancel]
-						puts "Cancel received"
+						puts "Received cancel"
 						message_body = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:port]
-						puts "Port received"
+						puts "Received port"
 						message_body = @connection.read(message_length-1)
 					else
-						puts "Unknown message received: ID #{message_id}"
+						puts "Received unknown message: ID #{message_id}"
 					end
 
 					if state[:i_am_unchoked]
@@ -227,9 +231,11 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 				bitfield_column_that_corresponds_with_piece_index = piece_index%8
 			end
 		end
-		@finished = true
-		@pieces_i_have.each do |piece|
-			@finished = false if piece == 0
+		if @pieces_i_have.length == number_of_pieces
+			@finished = true
+			@pieces_i_have.each do |piece|
+				@finished = false if piece == 0
+			end
 		end
 
 		@connection.close
@@ -244,3 +250,5 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 #but what if the first peer doesn't have all of the pieces and you get some of
 #them from the second peer?  Those pieces would be written at the end when
 #they shouldn't be.  Fix that.
+
+#TODO support torrents with multiple files.
