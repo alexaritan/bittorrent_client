@@ -23,6 +23,7 @@ require 'ipaddr'
 }
 
 #Parse .torrent file and prepare parameters for tracker request.
+#TODO make this read from parameter 1.
 file = BEncode.load_file "ubuntu-14.10-desktop-amd64.iso.torrent"
 addr = file["announce"]
 info = file["info"]
@@ -79,8 +80,8 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 			puts "Received handshake"
 		}
 
-		#Set the state of the peer.
-		state = {
+		#Set the @state of the peer.
+		@state = {
 			i_am_interested: false,
 			peer_is_interested: false,
 			i_am_unchoked: false,
@@ -93,6 +94,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		bitfield_message_id = @connection.read(1)
 		bitfield_message_id = bitfield_message_id.bytes.to_a[0] if bitfield_message_id != nil
 		#TODO if the length of the bitfield is not the correct size, you should drop the @connection.  I'm not sure how to tell if it is the correct size as of right now though...
+		bitfield = [[]]
 		if bitfield_message_id != 5
 			puts "No bitfield!"
 		else
@@ -126,7 +128,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 
 		#Parse incoming messages and handle them appropriately.
 		while true do #TODO change to "while there are still pieces left".
-			if @pieces_i_have[piece_index] != 1 && bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] == 1
+			if @pieces_i_have[piece_index] != 1
 				puts "Looking for incoming message"
 				message_length = @connection.read(4).unpack("N")[0]
 
@@ -137,16 +139,16 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 
 					if message_id == @message_ids[:choke]
 						puts "Received choke"
-						state[:i_am_unchoked] = false
+						@state[:i_am_unchoked] = false
 					elsif message_id == @message_ids[:unchoke]
 						puts "Received unchoke"
-						state[:i_am_unchoked] = true
+						@state[:i_am_unchoked] = true
 					elsif message_id == @message_ids[:interested]
 						puts "Received interested"
-						state[:peer_is_interested] = true
+						@state[:peer_is_interested] = true
 					elsif message_id == @message_ids[:not_interested]
 						puts "Received not interested"
-						state[:peer_is_interested] = false
+						@state[:peer_is_interested] = false
 					elsif message_id == @message_ids[:have]
 						puts "Received have"
 						#TODO implement suppost for HAVE messages.
@@ -221,7 +223,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						puts "Received unknown message: ID #{message_id}"
 					end
 
-					if state[:i_am_unchoked]
+					if @state[:i_am_unchoked] && bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] != 1
 						#Encode parameters for REQUEST message.
 						request_message_length = [13].pack("N")
 						request_message_id = "\6"
@@ -263,10 +265,5 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		@connection.close if @connection != nil
 	end
 }
-
-#TODO right now you just write to the end of the file whenever you get a piece,
-#but what if the first peer doesn't have all of the pieces and you get some of
-#them from the second peer?  Those pieces would be written at the end when
-#they shouldn't be.  Fix that.
 
 #TODO support torrents with multiple files.
