@@ -46,25 +46,26 @@ params = {
 #Connect to tracker listed in .torrent file.
 request = URI addr
 request.query = URI.encode_www_form params
-response = BEncode.load Net::HTTP.get_response(request).body
+response = BEncode.load(Net::HTTP.get_response(request).body)
 
 #Parse peers from tracker response.
-peers = response["peers"].scan /.{6}/
+peers = response["peers"].scan(/.{6}/)
 unpacked_peers = peers.collect {
 	|p|
-	p.unpack "a4n"
+	p.unpack("a4n")
 }
 
 #Connect to peers with Bittorrent handshake.  Then request blocks of the desired file if all else is appropriate.
 handshake = "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{params[:info_hash]}#{id}"
 unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id from peer handshake.  If they don't match, close the @connection.  You must do this IN ADDITION to checking if the hashes match.
 	|ip, port|
+	ip = IPAddr.ntop(ip)
 	begin
 		#You have two seconds to open a TCP socket with a peer, send a handshake,
 		#and receive and parse the response handshake.
 		Timeout::timeout(2){
 			#Send the handshake.
-			@connection = TCPSocket.new(IPAddr.new_ntoh(ip).to_s, port)
+			@connection = TCPSocket.new(IPAddr.new(ip).to_s, port)
 			@connection.write(handshake)
 			puts "Sent handshake"
 			
