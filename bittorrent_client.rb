@@ -24,16 +24,16 @@ require 'ipaddr'
 
 #Parse .torrent file and prepare parameters for tracker request.
 #TODO make this read from parameter 1.
-file = BEncode.load_file "ubuntu-14.10-desktop-amd64.iso.torrent"
+file = BEncode.load_file("mount_external_hdd.bash.torrent")
 addr = file["announce"]
 info = file["info"]
 info_hash = Digest::SHA1.new.digest(info.bencode)
 file_length = info["length"]
 file_name = info["name"]
-id = "12345439123454321230"
+my_peer_id = "12345439123454321230"
 params = {
 	info_hash: info_hash,
-	peer_id: id,
+	peer_id: my_peer_id,
 	port: "6881",
 	uploaded: "0",
 	downloaded: "0", #TODO might need to update this with each handshake you send.
@@ -42,24 +42,96 @@ params = {
 	no_peer_id: "0",
 	event: "started"
 }
+if addr[0..3] == "http"
+	#Connect to tracker listed in .torrent file.
+	request = URI addr
+	request.query = URI.encode_www_form params
+	response = BEncode.load(Net::HTTP.get_response(request).body)
 
-#Connect to tracker listed in .torrent file.
-request = URI addr
-request.query = URI.encode_www_form params
-response = BEncode.load(Net::HTTP.get_response(request).body)
+	#Parse peers from tracker response.
+	peers = response["peers"].scan(/.{6}/)
+	unpacked_peers = peers.collect {
+		|p|
+		p.unpack("a4n")
+	}
+elsif addr[0..2] == "udp"
+	#TODO
+	#This code works both at home and at school.
+	#But if you change the IP address that you try to connect to
+	#to be something like tracker.istole.it, it works at home
+	#but not at school, which is really weird.
+	#Only numerical IP strings work in both places.
+	udp_socket = UDPSocket.new
+	udp_socket.connect("192.121.121.30", 80)
 
-#Parse peers from tracker response.
-peers = response["peers"].scan(/.{6}/)
-unpacked_peers = peers.collect {
-	|p|
-	p.unpack("a4n")
-}
+	#Prepare parameters for UDP tracker connect request.
+	connection_id = 0x41727101980
+	my_transaction_id = 11
+	request_params = [connection_id >> 32, connection_id & 0xffffffff, 0, my_transaction_id].pack("NNNN")
 
+	#Send UDP tracker connect request.
+	udp_socket.send("#{request_params}", 0)
+
+	#Receive and parse UDP tracker connect response.  Then verify response parameters.
+	response = udp_socket.recv(1024)
+	action, transaction_id, c0, c1 = response.unpack("NNNN")
+	if my_transaction_id != transaction_id || action != 0
+		udp_socket.close
+		puts "UDP TRACKER ERROR 1: Transaction ID mismatch."
+	end
+
+	#Prepare parameters for UDP tracker announce request.
+	connection_id = (c0 << 32) | c1
+	my_transaction_id = 1
+	downloaded = 0
+	left = 10000
+	uploaded = 0
+	my_ip_address = 0
+	key = 111
+	max_peers = 30
+	params[:port] = udp_socket.addr[1]
+	params[:event] = 2
+	request_params = [[connection_id >> 32, connection_id & 0xffffffff, 1, my_transaction_id].pack("NNNN"),[params[:downloaded].to_i >> 32, params[:downloaded].to_i & 0xffffffff, params[:left].to_i >> 32, params[:left].to_i & 0xffffffff, params[:uploaded].to_i >> 32, params[:uploaded].to_i & 0xffffffff, params[:event], my_ip_address, key, max_peers, params[:port].to_i >> 16].pack("NNNNNNNNNNn")]
+
+	#Send UDP announce request.
+	udp_socket.send("#{request_params[0]}#{info_hash}#{my_peer_id}#{request_params[1]}", 0)
+
+	#Receive and parse UDP tracker announce response.
+	response = udp_socket.recv(1024)
+	response = response.unpack("N5NnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNn")
+	action = response[0]
+	transaction_id = response[1]
+	if my_transaction_id != transaction_id || action != 1
+		udp_socket.close
+		puts "UDP TRACKER ERROR 2: Transaction ID mismatch."
+	end
+	interval = response[2] #TODO number of seconds you should wait before reannouncing yourself.
+	leechers = response[3]
+	seeders = response[4]
+	unpacked_peers = []
+	i = 5
+	while i<response.length && response[i] != nil
+		if i%2 == 1
+			unpacked_peers[unpacked_peers.length] = []
+			unpacked_peers[unpacked_peers.length-1][0] = [response[i]].pack("N").unpack("C4").join(".")
+			unpacked_peers[unpacked_peers.length-1][1] = response[i+1]
+		end
+		i+=1
+	end
+
+	#Close the connection.
+	begin
+		udp_socket.close
+	rescue
+		#Just taking up space; nothing to see here.
+	end
+end
+	
 #Connect to peers with Bittorrent handshake.  Then request blocks of the desired file if all else is appropriate.
-handshake = "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{params[:info_hash]}#{id}"
+handshake = "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{params[:info_hash]}#{my_peer_id}"
 unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id from peer handshake.  If they don't match, close the @connection.  You must do this IN ADDITION to checking if the hashes match.
 	|ip, port|
-	ip = IPAddr.ntop(ip)
+	#ip = IPAddr.ntop(ip) rescue
 	begin
 		#You have two seconds to open a TCP socket with a peer, send a handshake,
 		#and receive and parse the response handshake.
@@ -116,8 +188,11 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 			number_of_pieces = file_length/piece_length + 1
 		end
 
-		size_of_last_piece = file_length%piece_length
-		remaining_size_of_piece = piece_length
+		size_of_last_piece = piece_length
+		size_of_last_piece = file_length%piece_length unless file_length%piece_length == 0
+		#remaining_size_of_piece = file_length
+		remaining_size_of_piece = piece_length if piece_length <= file_length
+		remaining_size_of_piece = file_length.to_i if piece_length > file_length.to_i
 		piece_index = 0 #Increment this by 1 (or to next available piece) after each piece is finished.
 		begin_block = 0 #Increment this by block_size after each block request.
 		block_size = 2**14 #This stays constant.
@@ -127,12 +202,27 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		bitfield_row_that_corresponds_with_piece_index = piece_index/8
 		bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
+
+		#ALEX!!!
+		#You are currently testing your implementation handling both
+		#HTTP and UDP trackers.  It appears to continue to work with
+		#HTTP trackers, but with UDP it hangs after requesting a
+		#piece.  You have a torrent paused on your home computer that
+		#you can test the UDP tracker with.  If you can successfully
+		#download that file, you are in good shape!  For now.
+
+
 		#Parse incoming messages and handle them appropriately.
 		while true do #TODO change to "while there are still pieces left".
 			if @pieces_i_have[piece_index] != 1
 				puts "Looking for incoming message"
-				message_length = @connection.read(4).unpack("N")[0]
-
+				message_length = 0
+				begin
+					#Timeout::timeout(10){
+						message_length = @connection.read(4).unpack("N")[0]# rescue next
+					#}
+				rescue
+				end
 				if message_length == 0
 					#puts "Received keep-alive"
 				elsif message_length > 0
@@ -237,8 +327,9 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 							@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
 							puts "Sent request of #{block_size} for piece #{piece_index}"
 						else
-							@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + remaining_size_of_piece)
-							puts "Sent request of #{remaining_size_of_piece}"
+							request_block_size = [remaining_size_of_piece].pack("N")
+							@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
+							puts "Sent request of #{remaining_size_of_piece} for piece #{piece_index}"
 						end
 					else
 						#Send INTERESTED message to the connected peer.
