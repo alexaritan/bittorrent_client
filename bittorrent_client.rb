@@ -4,6 +4,8 @@ require 'uri'
 require 'net/http'
 require 'ipaddr'
 
+puts "Starting..."
+
 #Keep track of pieces you have stored.  Each index in the array
 #corresponds to the index of the piece (ie. pieces_i_have[0] = 1
 #corresponds to having piece 0).
@@ -24,7 +26,8 @@ require 'ipaddr'
 
 #Parse .torrent file and prepare parameters for tracker request.
 #TODO make this read from parameter 1.
-file = BEncode.load_file("mount_external_hdd.bash.torrent")
+#file = BEncode.load_file("mount_external_hdd.bash.torrent")
+file = BEncode.load_file("ubuntu-14.10-desktop-amd64.iso.torrent")
 addr = file["announce"]
 info = file["info"]
 info_hash = Digest::SHA1.new.digest(info.bencode)
@@ -44,7 +47,7 @@ params = {
 }
 if addr[0..3] == "http"
 	#Connect to tracker listed in .torrent file.
-	request = URI addr
+	request = URI(addr)
 	request.query = URI.encode_www_form params
 	response = BEncode.load(Net::HTTP.get_response(request).body)
 
@@ -62,7 +65,9 @@ elsif addr[0..2] == "udp"
 	#but not at school, which is really weird.
 	#Only numerical IP strings work in both places.
 	udp_socket = UDPSocket.new
-	udp_socket.connect("192.121.121.30", 80)
+	uri_addr = URI(addr).host
+	uri_port = URI(addr).port
+	udp_socket.connect("#{uri_addr}", uri_port)
 
 	#Prepare parameters for UDP tracker connect request.
 	connection_id = 0x41727101980
@@ -131,7 +136,8 @@ end
 handshake = "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{params[:info_hash]}#{my_peer_id}"
 unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id from peer handshake.  If they don't match, close the @connection.  You must do this IN ADDITION to checking if the hashes match.
 	|ip, port|
-	#ip = IPAddr.ntop(ip) rescue
+	temp_ip = ip
+	ip = IPAddr.ntop(ip) rescue ip = temp_ip
 	begin
 		#You have two seconds to open a TCP socket with a peer, send a handshake,
 		#and receive and parse the response handshake.
