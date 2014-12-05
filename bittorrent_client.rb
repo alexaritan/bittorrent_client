@@ -233,8 +233,8 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						@state[:peer_is_interested] = false
 					elsif message_id == @message_ids[:have]
 						puts "Received have"
-						#TODO implement suppost for HAVE messages.
-						message_body = @connection.read(message_length-1)
+						have_index = @connection.read(4).unpack("N")[0]
+						bitfield[have_index/8][have_index%8] = 1
 					elsif message_id == @message_ids[:bitfield]
 						puts "Received bitfield"
 						#TODO implement support for a bitfield received here.
