@@ -26,7 +26,7 @@ puts "Starting..."
 
 #Parse .torrent file and prepare parameters for tracker request.
 #TODO make this read from parameter 1.
-#file = BEncode.load_file("mount_external_hdd.bash.torrent")
+#file = BEncode.load_file("mount_external_hdd.bash.torrent") #TODO test with PublicBT tracker instead of istole.it.
 file = BEncode.load_file("ubuntu-14.10-desktop-amd64.iso.torrent")
 addr = file["announce"]
 info = file["info"]
@@ -58,12 +58,6 @@ if addr[0..3] == "http"
 		p.unpack("a4n")
 	}
 elsif addr[0..2] == "udp"
-	#TODO
-	#This code works both at home and at school.
-	#But if you change the IP address that you try to connect to
-	#to be something like tracker.istole.it, it works at home
-	#but not at school, which is really weird.
-	#Only numerical IP strings work in both places.
 	udp_socket = UDPSocket.new
 	uri_addr = URI(addr).host
 	uri_port = URI(addr).port
@@ -209,15 +203,6 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 		bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
 
-		#ALEX!!!
-		#You are currently testing your implementation handling both
-		#HTTP and UDP trackers.  It appears to continue to work with
-		#HTTP trackers, but with UDP it hangs after requesting a
-		#piece.  You have a torrent paused on your home computer that
-		#you can test the UDP tracker with.  If you can successfully
-		#download that file, you are in good shape!  For now.
-
-
 		#Parse incoming messages and handle them appropriately.
 		while true do #TODO change to "while there are still pieces left".
 			if @pieces_i_have[piece_index] != 1
@@ -253,12 +238,13 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 					elsif message_id == @message_ids[:bitfield]
 						puts "Received bitfield"
 						#TODO implement support for a bitfield received here.
+						#^^Is that really necessary?  Why would I receive a bitfield at this point?
 						message_body = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:request]
 						puts "Received request (uhh, what?)"
 						message_body = @connection.read(message_length-1)
 						#TODO implement support for requests.
-						#This is a very, very LOW priority.
+						#This is a very, VERY low priority.
 					elsif message_id == @message_ids[:piece]
 						puts "Received block #{begin_block} in piece #{piece_index}"
 						begin_block += (message_length - 9)
