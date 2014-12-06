@@ -214,11 +214,11 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						@state[:peer_is_interested] = false
 					elsif message_id == @message_ids[:have]
 						puts "Received have"
-						have_index = @connection.read(4).unpack("N")[0]
-						bitfield[have_index/8][have_index%8] = 1
+						have_index = @connection.read(4).unpack("N")[0].to_i
+						@bitfield[have_index/8][have_index%8] = 1
 					elsif message_id == @message_ids[:bitfield]
 						puts "Received bitfield"
-						bitfield = @connection.read(message_length-1)
+						@bitfield = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:request]
 						puts "Received request (uhh, what?)"
 						message_body = @connection.read(message_length-1)
@@ -285,7 +285,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						puts "Received unknown message: ID #{message_id}"
 					end
 
-					if @state[:i_am_unchoked] && bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] != 1
+					if @state[:i_am_unchoked] && @bitfield[bitfield_row_that_corresponds_with_piece_index][bitfield_column_that_corresponds_with_piece_index] != 1
 						#Encode parameters for REQUEST message.
 						request_message_length = [13].pack("N")
 						request_message_id = "\6"
