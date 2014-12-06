@@ -161,25 +161,6 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 			peer_is_unchoked: false
 		}
 
-		#Parse the optional bitfield message that may be received immediately after the handshake.
-		bitfield_length = @connection.read(4)
-		bitfield_length = bitfield_length.unpack("N")[0] if bitfield_length != nil
-		bitfield_message_id = @connection.read(1)
-		bitfield_message_id = bitfield_message_id.bytes.to_a[0] if bitfield_message_id != nil
-		#TODO if the length of the bitfield is not the correct size, you should drop the @connection.  I'm not sure how to tell if it is the correct size as of right now though...
-		bitfield = [[]]
-		if bitfield_message_id != 5
-			puts "No bitfield!"
-		else
-			bitfield = @connection.read(bitfield_length - 1).unpack("B8" * (bitfield_length-1))
-			puts "Received initial bitfield"
-			#TODO implement support for incomplete bitfields followed by HAVE messages.  This would require you to set some additional bits in the bitfield according to the received HAVE messages.
-		end
-
-		#Send INTERESTED message to the connected peer.
-		@connection.write("\0\0\0\1\2") #First 4 bytes = 1, meaning length of payload = 1 byte.  5th byte is id = 2, which corresponds to INTERESTED message.
-		puts "Sent interested"
-
 		#Prepare variables for REQUEST message for when peer unchokes you.
 		piece_length = info["piece length"].to_i
 		if file_length%piece_length == 0
@@ -237,9 +218,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						bitfield[have_index/8][have_index%8] = 1
 					elsif message_id == @message_ids[:bitfield]
 						puts "Received bitfield"
-						#TODO implement support for a bitfield received here.
-						#^^Is that really necessary?  Why would I receive a bitfield at this point?
-						message_body = @connection.read(message_length-1)
+						bitfield = @connection.read(message_length-1)
 					elsif message_id == @message_ids[:request]
 						puts "Received request (uhh, what?)"
 						message_body = @connection.read(message_length-1)
@@ -327,6 +306,7 @@ unpacked_peers.each { #TODO you must compare peer_id from tracker to peer_id fro
 						#Send INTERESTED message to the connected peer.
 						@connection.write("\0\0\0\1\2") #First 4 bytes = 1, meaning length of payload = 1 byte.  5th byte is id = 2, which corresponds to INTERESTED message.
 						puts "Sent interested"
+						@state[:i_am_interested] = true
 					end
 				end
 			else
