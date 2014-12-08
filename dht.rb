@@ -22,28 +22,11 @@ while true do
 	#Connect to DHT node.
 	dht_udp_socket = UDPSocket.new
 	dht_udp_socket.connect("#{uri_addr}", uri_port)
-	puts "Connected to peer #{uri_addr} #{uri_port}."
+	puts "Connected to node #{uri_addr} #{uri_port}."
 
-=begin
-	#Ping the DHT node.
+	#Send get_peers to node.
 	params = {
-		t: "0",
-		y: "q",
-		q: "ping",
-		a: {
-			id: node_id
-		}
-	}
-	ping_query = params.bencode
-	dht_udp_socket.send(ping_query, 0)
-	dht_ping_response = dht_udp_socket.recv(1024)
-	dht_ping_response = BEncode.load(dht_ping_response)
-	response_node_id = dht_ping_response["r"]["id"].unpack("H20")
-=end
-
-	#Send get_peers to bootstrap node.
-	params = {
-		t: "0",
+		t: "aa",
 		y: "q",
 		q: "get_peers",
 		a: {
@@ -55,26 +38,27 @@ while true do
 	dht_udp_socket.send(get_peers_query, 0)
 
 	#Receive the get_peers response from bootstrap node.
-	puts @dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
+	@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
 
 	#Parse the closer nodes from the response if they are included in the response.
 	#TODO make this a loop until you get a VALUES key instead of a NODES key.
-	dht_get_peers_nodes = @dht_get_peers_response["r"]["nodes"].unpack("NnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNn") if @dht_get_peers_response["r"]["nodes"] != nil
+	dht_get_peers_nodes = @dht_get_peers_response["r"]["nodes"].unpack("H20NnH20Nn") if @dht_get_peers_response["r"]["nodes"] != nil
 	if dht_get_peers_nodes != nil
 		unpacked_get_peers_nodes = []
 		i = 0
 		while i<dht_get_peers_nodes.length && dht_get_peers_nodes[i] != nil do
-			if i%2 == 0
+			if i%3 == 0
 				unpacked_get_peers_nodes[unpacked_get_peers_nodes.length] = []
-				unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][0] = [dht_get_peers_nodes[i].to_i].pack("N").unpack("C4").join(".")
-				unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][1] = dht_get_peers_nodes[i+1]
+				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][0] = dht_get_peers_nodes[i]
+				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][1] = [dht_get_peers_nodes[i+1].to_i].pack("N").unpack("C4").join(".")
+				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][2] = dht_get_peers_nodes[i+2].to_i
 			end
 			i += 1
 		end
 	end
 	break if @dht_get_peers_response["r"]["values"] != nil
-	uri_addr = URI(unpacked_get_peers_nodes[0][0])
-	uri_port = unpacked_get_peers_nodes[0][1]
+	uri_addr = URI(unpacked_get_peers_nodes[0][1])
+	uri_port = unpacked_get_peers_nodes[0][2]
 	#TODO now do something with unpacked_get_peers_nodes...
 	dht_udp_socket.close
 end
@@ -95,3 +79,37 @@ if dht_get_peers_values != nil
 	end
 end
 #TODO now do something with unpacked_get_peers_values...
+
+
+=begin a DHT ping, in case you need it.
+	#Ping the DHT node.
+	params = {
+		t: "0",
+		y: "q",
+		q: "ping",
+		a: {
+			id: node_id
+		}
+	}
+	ping_query = params.bencode
+	dht_udp_socket.send(ping_query, 0)
+	dht_ping_response = dht_udp_socket.recv(1024)
+	dht_ping_response = BEncode.load(dht_ping_response)
+	response_node_id = dht_ping_response["r"]["id"].unpack("H20")
+=end
+
+=begin a DHT find_node, in case you need it.
+	params = {
+		t: "0",
+		y: "q",
+		q: "find_node",
+		a: {
+			id: node_id,
+			target: @dht_get_peers_response["r"]["nodes"][1..19].unpack("H20")
+		}
+	}
+	find_node_query = params.bencode
+	dht_udp_socket.send(find_node_query, 0)
+	puts "Find node:"
+	@dht_find_node_response = BEncode.load(dht_udp_socket.recv(1024))
+=end
