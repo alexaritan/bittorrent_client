@@ -46,6 +46,7 @@ params = {
 	event: "started"
 }
 if addr[0..3] == "http"
+	puts "Connecting to HTTP tracker."
 	#Connect to tracker listed in .torrent file.
 	request = URI(addr)
 	request.query = URI.encode_www_form params
@@ -53,11 +54,12 @@ if addr[0..3] == "http"
 
 	#Parse peers from tracker response.
 	peers = response["peers"].scan(/.{6}/)
-	unpacked_peers = peers.collect {
+	unpacked_peers = peers.collect { 
 		|p|
 		p.unpack("a4n")
 	}
 elsif addr[0..2] == "udp"
+	puts "Connecting to UDP tracker."
 	udp_socket = UDPSocket.new
 	uri_addr = URI(addr).host
 	uri_port = URI(addr).port
