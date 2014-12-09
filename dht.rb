@@ -2,6 +2,7 @@ require 'bencode'
 require 'digest/sha1'
 require 'uri'
 require 'socket'
+require 'ipaddr'
 
 puts "Connecting to distributed hash table."
 
@@ -18,7 +19,6 @@ uri_addr = URI("router.bittorrent.com")
 uri_port = 6881
 
 while true do
-	#Bootstrap into DHT.
 	#Connect to DHT node.
 	dht_udp_socket = UDPSocket.new
 	dht_udp_socket.connect("#{uri_addr}", uri_port)
@@ -37,31 +37,14 @@ while true do
 	get_peers_query = params.bencode
 	dht_udp_socket.send(get_peers_query, 0)
 
-	#Receive the get_peers response from bootstrap node.
+	#Receive the get_peers response from node.
 	@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
 	dht_get_peers_id = @dht_get_peers_response["r"]["nodes"].bytes.to_a[0..19]
 	dht_get_peers_ip = @dht_get_peers_response["r"]["nodes"].bytes.to_a[20..23].join(".")
 	dht_get_peers_port_a = @dht_get_peers_response["r"]["nodes"].bytes.to_a[24]
 	dht_get_peers_port = (dht_get_peers_port_a << 8) |  @dht_get_peers_response["r"]["nodes"].bytes.to_a[25]
-
-=begin
-	#Parse the closer nodes from the response if they are included in the response.
-	#TODO make this a loop until you get a VALUES key instead of a NODES key.
-	dht_get_peers_nodes = @dht_get_peers_response["r"]["nodes"].unpack("H20NnH20Nn") if @dht_get_peers_response["r"]["nodes"] != nil
-	if dht_get_peers_nodes != nil
-		unpacked_get_peers_nodes = []
-		i = 0
-		while i<dht_get_peers_nodes.length && dht_get_peers_nodes[i] != nil do
-			if i%3 == 0
-				unpacked_get_peers_nodes[unpacked_get_peers_nodes.length] = []
-				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][0] = dht_get_peers_nodes[i]
-				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][1] = [dht_get_peers_nodes[i+1].to_i].pack("N").unpack("C4").join(".")
-				puts unpacked_get_peers_nodes[unpacked_get_peers_nodes.length - 1][2] = dht_get_peers_nodes[i+2].to_i
-			end
-			i += 1
-		end
-	end
-=end
+	
+	#Check if values have been received.  If not, ask for more nodes.
 	break if @dht_get_peers_response["r"]["values"] != nil
 	uri_addr = URI(dht_get_peers_ip)
 	uri_port = dht_get_peers_port
@@ -73,58 +56,34 @@ end
 
 
 
-#Parse the values from the response if they are included in the response.
+#Parse the values from the response if they are included.
 #These IPs and ports correspond to peers that are in the swarm you're looking for.
-puts dht_get_peers_values = @dht_get_peers_response["r"]["values"] if @dht_get_peers_response["r"]["values"] != nil
+dht_get_peers_values = @dht_get_peers_response["r"]["values"] if @dht_get_peers_response["r"]["values"] != nil
 if dht_get_peers_values != nil
 	puts "HOLY CRAP IT'S WORKING!!!!!!!!!!!!!!"
-	unpacked_get_peers_values = []
-	i = 0
-	while i<dht_get_peers_values.length && dht_get_peers_values[i] != nil do
-		if i%2 == 0
-			unpacked_get_peers_values[unpacked_get_peers_values.length] = []
-			unpacked_get_peers_values[unpacked_get_peers_values.length - 1][0] = [dht_get_peers_values[i].to_i].pack("N").unpack("C4").join(".")
-			unpacked_get_peers_values[unpacked_get_peers_values.length - 1][1] = dht_get_peers_values[i+1]
-		end
-		i += 1
-	end
+	dht_peer = dht_get_peers_values[1].to_s.unpack("Nn")
+	puts dht_peer_ip = [dht_peer[0]].pack("N").unpack("C4").join(".")
+	puts dht_peer_port = dht_peer[1]
+
+	########
+	my_peer_id = "12345439123454321230"
+	handshake = "\x13BitTorrent protocol\x00\x00\x00\x00\x00\x00\x00\x00#{info_hash}#{my_peer_id}"
+	@connection = TCPSocket.new(IPAddr.new(dht_peer_ip).to_s, dht_peer_port)
+	@connection.write(handshake)
+	puts "Sent handshake"
+	received_pstrlen = @connection.getbyte
+	peer_response = {
+		received_pstrlen: received_pstrlen,
+		received_pstr: @connection.read(received_pstrlen),
+		received_reserved: @connection.read(8),
+		received_info_hash: @connection.read(20),
+		received_peer_id: @connection.read(20)
+	}
+	puts "Received handshake"
+	######
 end
 
 #This might help:
 #https://github.com/deoxxa/bittorrent-dht-byo/blob/master/lib/dht.js
 
 #TODO now do something with unpacked_get_peers_values...
-
-
-=begin a DHT ping, in case you need it.
-	#Ping the DHT node.
-	params = {
-		t: "0",
-		y: "q",
-		q: "ping",
-		a: {
-			id: node_id
-		}
-	}
-	ping_query = params.bencode
-	dht_udp_socket.send(ping_query, 0)
-	dht_ping_response = dht_udp_socket.recv(1024)
-	dht_ping_response = BEncode.load(dht_ping_response)
-	response_node_id = dht_ping_response["r"]["id"].unpack("H20")
-=end
-
-=begin a DHT find_node, in case you need it.
-	params = {
-		t: "0",
-		y: "q",
-		q: "find_node",
-		a: {
-			id: node_id,
-			target: @dht_get_peers_response["r"]["nodes"][1..19].unpack("H20")
-		}
-	}
-	find_node_query = params.bencode
-	dht_udp_socket.send(find_node_query, 0)
-	puts "Find node:"
-	@dht_find_node_response = BEncode.load(dht_udp_socket.recv(1024))
-=end
