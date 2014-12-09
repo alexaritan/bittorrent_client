@@ -39,29 +39,35 @@ while true do
 
 	#Receive the get_peers response from node.
 	@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
-	dht_get_peers_id = @dht_get_peers_response["r"]["nodes"].bytes.to_a[0..19]
-	dht_get_peers_ip = @dht_get_peers_response["r"]["nodes"].bytes.to_a[20..23].join(".")
-	dht_get_peers_port_a = @dht_get_peers_response["r"]["nodes"].bytes.to_a[24]
-	dht_get_peers_port = (dht_get_peers_port_a << 8) |  @dht_get_peers_response["r"]["nodes"].bytes.to_a[25]
-	
-	#Check if values have been received.  If not, ask for more nodes.
+
+	#Check if values have been received instead of nodes.
 	break if @dht_get_peers_response["r"]["values"] != nil
+
+	#If values have not been received and nodes have...
+	i=0
+	while i<@dht_get_peers_response["r"]["nodes"].bytes.to_a.length do
+		dht_get_peers_id = @dht_get_peers_response["r"]["nodes"].bytes.to_a[26*i..(26*i)+19]
+		dht_get_peers_ip = @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)+20..(26*i)+23].join(".")
+		if dht_get_peers_ip == "127.0.0.1"
+			i += 1
+			next
+		end
+		dht_get_peers_port_a = @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)+24]
+		dht_get_peers_port = (dht_get_peers_port_a << 8) |  @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)+25]
+		break
+	end
+
+	#Check if values have been received.  If not, ask for more nodes.
 	uri_addr = URI(dht_get_peers_ip)
 	uri_port = dht_get_peers_port
 	dht_udp_socket.close
 end
 
-
-
-
-
-
 #Parse the values from the response if they are included.
 #These IPs and ports correspond to peers that are in the swarm you're looking for.
 dht_get_peers_values = @dht_get_peers_response["r"]["values"] if @dht_get_peers_response["r"]["values"] != nil
 if dht_get_peers_values != nil
-	puts "HOLY CRAP IT'S WORKING!!!!!!!!!!!!!!"
-	dht_peer = dht_get_peers_values[1].to_s.unpack("Nn")
+	dht_peer = dht_get_peers_values[0].to_s.unpack("Nn")
 	puts dht_peer_ip = [dht_peer[0]].pack("N").unpack("C4").join(".")
 	puts dht_peer_port = dht_peer[1]
 
@@ -85,5 +91,3 @@ end
 
 #This might help:
 #https://github.com/deoxxa/bittorrent-dht-byo/blob/master/lib/dht.js
-
-#TODO now do something with unpacked_get_peers_values...
