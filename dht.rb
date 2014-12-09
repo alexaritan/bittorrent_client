@@ -1,7 +1,7 @@
 require 'bencode'
 require 'digest/sha1'
 require 'uri'
-require 'socket'
+require 'net/http'
 require 'ipaddr'
 
 puts "Connecting to distributed hash table."
@@ -9,6 +9,7 @@ puts "Connecting to distributed hash table."
 node_id = "37914862501111111211"
 @nodes_to_visit = []
 @nodes_visited = []
+@node_offset_on_failure = 0
 
 #When dealing with magnet links, you'll be given the info hash.
 #You won't have to calculate it like you are doing below.
@@ -40,8 +41,23 @@ while true do
 	dht_udp_socket.send(get_peers_query, 0)
 
 	#Receive the get_peers response from node.
-	@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
-	@nodes_visited[@nodes_visited.length] = [uri_addr, uri_port]
+	begin
+		Timeout::timeout(5){
+			@nodes_visited[@nodes_visited.length] = [uri_addr, uri_port]
+			@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
+			@node_offset_on_failure = 0
+		}
+	rescue
+		@node_offset_on_failure += 1
+		if !@nodes_to_visit.empty? && @node_offset_on_failure < @nodes_to_visit.length
+			uri_addr = URI(@nodes_to_visit[@node_offset_on_failure][0])
+			uri_port = @nodes_to_visit[@node_offset_on_failure][1]
+			puts "Trying different node."
+			next
+		else
+			abort("Sorry, no alternative nodes available.")
+		end
+	end
 
 	#Check if values have been received instead of nodes.
 	break if @dht_get_peers_response["r"]["values"] != nil
