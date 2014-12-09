@@ -39,7 +39,12 @@ while true do
 
 	#Receive the get_peers response from bootstrap node.
 	@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
+	dht_get_peers_id = @dht_get_peers_response["r"]["nodes"].bytes.to_a[0..19]
+	dht_get_peers_ip = @dht_get_peers_response["r"]["nodes"].bytes.to_a[20..23].join(".")
+	dht_get_peers_port_a = @dht_get_peers_response["r"]["nodes"].bytes.to_a[24]
+	dht_get_peers_port = (dht_get_peers_port_a << 8) |  @dht_get_peers_response["r"]["nodes"].bytes.to_a[25]
 
+=begin
 	#Parse the closer nodes from the response if they are included in the response.
 	#TODO make this a loop until you get a VALUES key instead of a NODES key.
 	dht_get_peers_nodes = @dht_get_peers_response["r"]["nodes"].unpack("H20NnH20Nn") if @dht_get_peers_response["r"]["nodes"] != nil
@@ -56,17 +61,23 @@ while true do
 			i += 1
 		end
 	end
+=end
 	break if @dht_get_peers_response["r"]["values"] != nil
-	uri_addr = URI(unpacked_get_peers_nodes[0][1])
-	uri_port = unpacked_get_peers_nodes[0][2]
-	#TODO now do something with unpacked_get_peers_nodes...
+	uri_addr = URI(dht_get_peers_ip)
+	uri_port = dht_get_peers_port
 	dht_udp_socket.close
 end
 
+
+
+
+
+
 #Parse the values from the response if they are included in the response.
 #These IPs and ports correspond to peers that are in the swarm you're looking for.
-dht_get_peers_values = @dht_get_peers_response["r"]["values"].unpack("NnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNnNn") if dht_get_peers_response["r"]["values"] != nil
+puts dht_get_peers_values = @dht_get_peers_response["r"]["values"] if @dht_get_peers_response["r"]["values"] != nil
 if dht_get_peers_values != nil
+	puts "HOLY CRAP IT'S WORKING!!!!!!!!!!!!!!"
 	unpacked_get_peers_values = []
 	i = 0
 	while i<dht_get_peers_values.length && dht_get_peers_values[i] != nil do
@@ -78,6 +89,10 @@ if dht_get_peers_values != nil
 		i += 1
 	end
 end
+
+#This might help:
+#https://github.com/deoxxa/bittorrent-dht-byo/blob/master/lib/dht.js
+
 #TODO now do something with unpacked_get_peers_values...
 
 
