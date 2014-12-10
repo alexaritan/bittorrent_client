@@ -4,6 +4,21 @@ require 'uri'
 require 'net/http'
 require 'ipaddr'
 
+if ARGV[0] == "--help"
+	puts "Usage: ruby bittorrent_client [file.torrent | \"magnet link (in quotes)\"] [tracker | dht]"
+	abort()
+end
+
+torrent_info_in = ARGV[0]
+if !torrent_info_in.include?(".torrent") && torrent_info_in[0..5] != "magnet"
+	abort("Unsupported file type.  Only .torrent files and magnet links are allowed.")
+end
+
+connection_method = ARGV[1]
+if connection_method != "tracker" && connection_method != "dht"
+	abort("Unsupported connection method.  Only 'tracker' or 'dht' can be used.")
+end
+
 puts "Starting..."
 
 #Keep track of pieces you have stored.  Each index in the array
@@ -24,15 +39,20 @@ puts "Starting..."
 	port: 9
 }
 
-#Parse .torrent file and prepare parameters for tracker request.
-#TODO make this read from parameter 1.
-#file = BEncode.load_file("mount_external_hdd.bash.torrent") #TODO test with PublicBT tracker instead of istole.it.
-file = BEncode.load_file("ubuntu-14.10-desktop-amd64.iso.torrent")
-addr = file["announce"]
-info = file["info"]
-info_hash = Digest::SHA1.new.digest(info.bencode)
-file_length = info["length"]
-file_name = info["name"]
+#Parse .torrent file or magnet link and prepare parameters for tracker request or dht bootstrapping.
+#file = BEncode.load_file("ubuntu-14.10-desktop-amd64.iso.torrent")
+if torrent_info_in.include?(".torrent")
+	file = BEncode.load_file("#{torrent_info_in}")
+	addr = file["announce"]
+	info = file["info"]
+	info_hash = Digest::SHA1.new.digest(info.bencode)
+	file_length = info["length"]
+	file_name = info["name"]
+elsif torrent_info_in[0..5] == "magnet" #PUT ARGUMENT IN QUOTES!
+	puts "OH NO A MAGNET LINK"
+	info_hash_location = torrent_info_in.index("btih:")
+	info_hash = torrent_info_in[info_hash_location+5..info_hash_location+44]
+end
 my_peer_id = "12345439123454321230"
 params = {
 	info_hash: info_hash,
