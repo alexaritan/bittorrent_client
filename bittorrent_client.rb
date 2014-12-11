@@ -339,7 +339,7 @@ while true do
 								end
 								file_currently_downloading += 1
 								file_name = filenames[file_currently_downloading] if number_of_files > 1
-								remaining_size_of_file = files[file_currently_downloading]["length"] if number_of_files > 1
+								remaining_size_of_file = files[file_currently_downloading]["length"] if number_of_files > 1 && file_currently_downloading < number_of_files
 								@block_storage = []
 							end
 
@@ -382,6 +382,16 @@ while true do
 									break
 								else
 									remaining_size_of_piece = piece_length
+								end
+							end
+							#Check if entire torrent is done.
+							if file_currently_downloading == number_of_files
+								if file_length%piece_length != 0 && piece_index == file_length/(piece_length + 1)
+									puts "DONE!"
+									exit
+								elsif file_length%piece_length == 0 && piece_index == file_length/piece_index
+									puts "DONE!"
+									exit
 								end
 							end
 						elsif message_id == @message_ids[:cancel]
