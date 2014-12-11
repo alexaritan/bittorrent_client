@@ -53,7 +53,7 @@ while true do
 			}
 		rescue
 			@node_offset_on_failure += 1
-			if !@nodes_to_visit.empty? && @node_offset_on_failure < @nodes_to_visit.length
+			if !@nodes_to_visit.empty? && @node_offset_on_failure < @nodes_to_visit.length && !@nodes_visited.include?([@nodes_to_visit[@node_offset_on_failure][0], @nodes_to_visit[@node_offset_on_failure][1]])
 				uri_addr = URI(@nodes_to_visit[@node_offset_on_failure][0])
 				uri_port = @nodes_to_visit[@node_offset_on_failure][1]
 				puts "Trying different node."
