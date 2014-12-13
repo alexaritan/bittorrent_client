@@ -3,8 +3,6 @@ require 'socket'
 
 class UDPTracker
 
-	@socket = nil
-
 	def initialize(addr, port, info_hash, my_peer_id)
 		@info_hash = info_hash
 		@my_peer_id = my_peer_id

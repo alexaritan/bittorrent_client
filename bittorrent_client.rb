@@ -5,9 +5,10 @@ require 'net/http'
 require 'ipaddr'
 require_relative 'udp_tracker'
 require_relative 'http_tracker'
+require_relative 'dht'
 
 if ARGV[0] == "--help"
-	puts "Usage: ruby bittorrent_client [file.torrent | \"magnet link (in quotes)\"] [tracker | dht]"
+	puts "Usage: ruby bittorrent_client.rb [file.torrent | \"magnet link (in quotes)\"] [tracker | dht]"
 	abort()
 end
 
@@ -83,6 +84,7 @@ elsif torrent_info_in[0..5] == "magnet" #PUT ARGUMENT IN QUOTES! TODO finish mag
 	info_hash_location = torrent_info_in.index("btih:")
 	info_hash = torrent_info_in[info_hash_location+5..info_hash_location+44]
 end
+
 if connection_method == "tracker"
 	if addr[0..3] == "http"
 		http_tracker = HTTPTracker.new(addr, info_hash, my_peer_id)
@@ -95,131 +97,9 @@ if connection_method == "tracker"
 		unpacked_peers = udp_tracker.get_peers
 	end
 elsif connection_method == "dht"
-	puts "Connecting to distributed hash table."
-
-	node_id = "37914862501111111211"
-	@nodes_to_visit = []
-	@nodes_visited = []
-	@node_offset_on_failure = 0
-	@node_offset_on_peer_failure = 0
-	unpacked_peers = []
-	@last_visited_ip
-
-	#When dealing with magnet links, you'll be given the info hash.
-	#You won't have to calculate it like you are doing below.
-	#This is only for testing.
-	file = BEncode.load_file(torrent_info_in)
-	info = file["info"]
-	info_hash = Digest::SHA1.new.digest(info.bencode)
-
-	uri_addr = URI("router.bittorrent.com")
-	uri_port = 6881
-
-	while true do
-		while true do
-			#Connect to DHT node.
-			if @nodes_visited.include?([uri_addr, uri_port])
-				@node_offset_on_failure += 1
-				uri_addr = URI(@nodes_to_visit[@node_offset_on_failure][0])
-				uri_port = @nodes_to_visit[@node_offset_on_failure][1]
-				next if @node_offset_on_failure < @nodes_to_visit.length
-				no_more_nodes = true
-			end
-			dht_udp_socket = UDPSocket.new
-			dht_udp_socket.connect("#{uri_addr}", uri_port)
-			puts "Connected to node #{uri_addr} #{uri_port}."
-
-			#Send get_peers to node.
-			params = {
-				t: "aa",
-				y: "q",
-				q: "get_peers",
-				a: {
-					id: node_id,
-					info_hash: info_hash
-				}
-			}
-			get_peers_query = params.bencode
-			dht_udp_socket.send(get_peers_query, 0)
-
-			#Receive the get_peers response from node.
-			begin
-				Timeout::timeout(5){
-					@nodes_visited[@nodes_visited.length] = [uri_addr, uri_port]
-					@dht_get_peers_response = BEncode.load(dht_udp_socket.recv(1024))
-					if uri_addr == @last_visited_ip
-						@node_offset_on_failure += 1
-						uri_addr = URI(@nodes_to_visit[@node_offset_on_failure][0])
-						uri_port = @nodes_to_visit[@node_offset_on_failure][1]
-						raise("Duplicate IP")
-					end
-					@last_visited_ip = uri_addr
-					@node_offset_on_failure = 0
-				}
-			rescue
-				@node_offset_on_failure += 1
-				if !@nodes_to_visit.empty? && @node_offset_on_failure < @nodes_to_visit.length && !@nodes_visited.include?([@nodes_to_visit[@node_offset_on_failure][0], @nodes_to_visit[@node_offset_on_failure][1]])
-					uri_addr = URI(@nodes_to_visit[@node_offset_on_failure][0])
-					uri_port = @nodes_to_visit[@node_offset_on_failure][1]
-					puts "Trying different node."
-					next
-				else
-					no_more_nodes = true;
-					#abort("Sorry, no alternative nodes available.")
-				end
-			end
-
-			#Check if values have been received instead of nodes.
-			break if @dht_get_peers_response["r"]["values"] != nil
-
-			#If values have not been received and nodes have...
-			i=0
-			#@nodes_to_visit = [] if @dht_get_peers_response["r"]["nodes"] != nil
-			@nodes_to_visit.reverse!
-			while (i*26)+25<@dht_get_peers_response["r"]["nodes"].bytes.to_a.length do
-				#Parse each node ip and port from response.
-				dht_get_peers_id = @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)..((26*i)+19)]
-				dht_get_peers_ip = @dht_get_peers_response["r"]["nodes"].bytes.to_a[((26*i)+20)..((26*i)+23)].join(".")
-				dht_get_peers_port_a = @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)+24]
-				dht_get_peers_port = (dht_get_peers_port_a << 8) |  @dht_get_peers_response["r"]["nodes"].bytes.to_a[(26*i)+25]
-
-				#Add each node to @nodes_to_visit as long as it is not already in @nodes_visited.
-				@nodes_to_visit[@nodes_to_visit.length] = [dht_get_peers_ip, dht_get_peers_port] if !@nodes_visited.include?([dht_get_peers_ip, dht_get_peers_port]) && dht_get_peers_ip != "127.0.0.1"
-				i += 1
-			end
-
-			#Find the first node that hasn't been visited yet, then ask it for more nodes.
-			@nodes_to_visit.reverse!
-			@nodes_to_visit.each do |node|
-				if !@nodes_visited.include?(node[0,1])
-					uri_addr = URI(node[0])
-					uri_port = node[1]
-					break
-				end
-			end
-			dht_udp_socket.close
-		end
-
-		#Parse the values from the response if they are included.
-		#These IPs and ports correspond to peers that are in the swarm you're looking for.
-		dht_get_peers_values = @dht_get_peers_response["r"]["values"] if @dht_get_peers_response["r"]["values"] != nil
-		if dht_get_peers_values != nil
-			i = unpacked_peers.length
-			while (i*6)+5<dht_get_peers_values.length
-				puts "Adding peer to list"
-				dht_peer = dht_get_peers_values[i].to_s.unpack("Nn")
-				dht_peer_ip = [dht_peer[0]].pack("N").unpack("C4").join(".")
-				dht_peer_port = dht_peer[1]
-				unpacked_peers[unpacked_peers.length] = [dht_peer_ip, dht_peer_port]
-				i += 1
-			end
-			no_more_nodes = true if unpacked_peers.length >= 5
-				#exit
-				######
-			break if no_more_nodes
-		end
-		break if no_more_nodes
-	end
+	dht = DHT.new(info_hash)
+	dht.bootstrap
+	unpacked_peers = dht.get_peers
 end
 	
 #Connect to peers with Bittorrent handshake.  Then request blocks of the desired file if all else is appropriate.
@@ -330,7 +210,7 @@ while true do
 							@state[:peer_is_interested] = false
 						elsif message_id == @message_ids[:have]
 							puts "Received have"
-							have_index = @connection.read(4).unpack("N")[0].to_i
+							have_index = @connection.read(4)
 							@bitfield[have_index/8][have_index%8] = 1
 						elsif message_id == @message_ids[:bitfield]
 							puts "Received bitfield"
