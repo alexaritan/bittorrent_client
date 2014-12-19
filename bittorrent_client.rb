@@ -6,10 +6,10 @@ require 'ipaddr'
 require_relative 'udp_tracker'
 require_relative 'http_tracker'
 require_relative 'dht'
+require_relative 'peer'
 
 if ARGV[0] == "--help"
-	puts "Usage: ruby bittorrent_client.rb [file.torrent | \"magnet link (in quotes)\"] [tracker | dht]"
-	abort()
+	abort("Usage: ruby bittorrent_client.rb [file.torrent | \"magnet link (in quotes)\"] [tracker | dht]")
 end
 
 torrent_info_in = ARGV[0]
@@ -112,35 +112,8 @@ while true do
 		begin
 			#You have two seconds to open a TCP socket with a peer, send a handshake,
 			#and receive and parse the response handshake.
-			Timeout::timeout(5){
-				#Send the handshake.
-				@connection = TCPSocket.new(IPAddr.new(ip).to_s, port)
-				@connection.write(handshake)
-				puts "Sent handshake"
-				
-				begin
-					#Parse the response handshake.
-					received_pstrlen = @connection.getbyte
-					peer_response = {
-						received_pstrlen: received_pstrlen,
-						received_pstr: @connection.read(received_pstrlen),
-						received_reserved: @connection.read(8),
-						received_info_hash: @connection.read(20),
-						received_peer_id: @connection.read(20)
-					}
-				rescue
-					next
-				end
-				puts "Received handshake"
-			}
-
-			#Set the @state of the peer.
-			@state = {
-				i_am_interested: false,
-				peer_is_interested: false,
-				i_am_unchoked: false,
-				peer_is_unchoked: false
-			}
+			peer = Peer.new(ip, port)
+			@connection = peer.connect(handshake)
 
 			#Prepare variables for REQUEST message for when peer unchokes you.
 			begin_block = 0 #Increment this by block_size after each block request.
