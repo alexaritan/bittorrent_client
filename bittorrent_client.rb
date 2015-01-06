@@ -14,12 +14,12 @@ end
 
 torrent_info_in = ARGV[0]
 if !torrent_info_in.include?(".torrent") && torrent_info_in[0..5] != "magnet"
-	abort("Unsupported file type.  Only .torrent files and magnet links are allowed.")
+	abort("Unsupported file type.  Only .torrent files and magnet links are supported.")
 end
 
 connection_method = ARGV[1]
 if connection_method != "tracker" && connection_method != "dht"
-	abort("Unsupported connection method.  Only 'tracker' or 'dht' can be used.")
+	abort("Unsupported connection method.  Only 'tracker' and 'dht' are supported.")
 end
 
 puts "Starting..."
