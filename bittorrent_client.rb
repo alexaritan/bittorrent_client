@@ -147,6 +147,15 @@ while true do
 			bitfield_row_that_corresponds_with_piece_index = piece_index/8
 			bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
+			##THIS NEEDS TO BE MOVED COMPLETELY INTO THE PEER CLASS!!!
+			@state = {
+				i_am_interested: false,
+				peer_is_interested: false,
+				i_am_unchoked: false,
+				peer_is_unchoked: false
+			}
+			##END NEED TO MOVE.
+
 			#Parse incoming messages and handle them appropriately.
 			while true do
 				if @pieces_i_have[piece_index] != 1
