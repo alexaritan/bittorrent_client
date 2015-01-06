@@ -118,6 +118,12 @@ while true do
 			begin_block = 0 #Increment this by block_size after each block request.
 			piece_index = 0 #Increment this by 1 (or to next available piece) after each piece is finished.
 			if number_of_files > 1
+				##############################
+				#Uh, what the hell was I doing when I wrote this block of code?
+				#What is it even supposed to do?
+				#I THINK it is supposed to calculate the stuff at the bottom
+				#of the block automatically, in the case that a multi-file
+				#torrent must be acquired from multiple peers.
 				i = 0
 				len = 0
 				while i < file_currently_downloading do
@@ -133,6 +139,7 @@ while true do
 				remaining_size_of_piece = files[file_currently_downloading]["length"] if piece_length > files[file_currently_downloading]["length"]
 				remaining_size_of_piece = piece_length - begin_block if file_currently_downloading > 1 && begin_block > 0 && just_switched_to_next_file && (piece_length - begin_block) < files[file_currently_downloading]["length"]
 				begin_block = files[file_currently_downloading - 1]["length"]%piece_length if file_currently_downloading > 1
+				##############################
 			else
 				if file_length%piece_length == 0
 					size_of_last_piece = piece_length
@@ -154,7 +161,7 @@ while true do
 				i_am_unchoked: false,
 				peer_is_unchoked: false
 			}
-			##END NEED TO MOVE.
+			##END NEED TO MOVE!!!
 
 			#Parse incoming messages and handle them appropriately.
 			while true do
