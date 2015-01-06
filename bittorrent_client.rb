@@ -51,7 +51,6 @@ puts "Starting..."
 }
 
 #Parse .torrent file or magnet link and prepare parameters for tracker request or dht bootstrapping.
-#file = BEncode.load_file("ubuntu-14.10-desktop-amd64.iso.torrent")
 if torrent_info_in.include?(".torrent")
 	file = BEncode.load_file("#{torrent_info_in}")
 	addr = file["announce"]
@@ -64,7 +63,7 @@ if torrent_info_in.include?(".torrent")
 	number_of_files = 1
 	remaining_size_of_file = file_length
 	file_currently_downloading = 0
-	if file_length == nil #If there exists more than one file in the torrent.
+	if file_length == nil #This will be true if there exists more than one file in the torrent.
 		file_length = 0
 		filenames = []
 		files = info["files"]
@@ -127,10 +126,8 @@ while true do
 				end
 				if files[file_currently_downloading]["length"]%piece_length == 0
 					piece_index = len/piece_length
-					#number_of_pieces = files[file_currently_downloading]["length"]/piece_length
 				else
 					piece_index = len/piece_length + 1 unless file_currently_downloading == 0
-					#number_of_pieces = files[file_currently_downloading]["length"]/piece_length + 1
 				end
 				remaining_size_of_piece = piece_length if piece_length <= files[file_currently_downloading]["length"]
 				remaining_size_of_piece = files[file_currently_downloading]["length"] if piece_length > files[file_currently_downloading]["length"]
@@ -138,10 +135,8 @@ while true do
 				begin_block = files[file_currently_downloading - 1]["length"]%piece_length if file_currently_downloading > 1
 			else
 				if file_length%piece_length == 0
-					#number_of_pieces = file_length/piece_length
 					size_of_last_piece = piece_length
 				else
-					#number_of_pieces = file_length/piece_length + 1
 					size_of_last_piece = file_length%piece_length
 				end
 				remaining_size_of_piece = piece_length if piece_length <= file_length
@@ -153,14 +148,12 @@ while true do
 			bitfield_column_that_corresponds_with_piece_index = piece_index%8
 
 			#Parse incoming messages and handle them appropriately.
-			while true do #TODO change to "while there are still pieces left".
+			while true do
 				if @pieces_i_have[piece_index] != 1
 					puts "Looking for incoming message"
 					message_length = 0
 					begin
-						#Timeout::timeout(10){
-							message_length = @connection.read(4).unpack("N")[0]# rescue next
-						#}
+						message_length = @connection.read(4).unpack("N")[0]# rescue next
 					rescue
 						break
 					end
@@ -216,6 +209,7 @@ while true do
 											file.write block
 										end
 									end
+
 									#Check to see if the piece after the one you just stored has already
 									#been downloaded and is waiting to be written to file.
 									while @pieces_to_write_to_file_later[@next_piece_to_write_to_file] != nil do
@@ -240,7 +234,7 @@ while true do
 							end
 
 							if remaining_size_of_piece == 0
-								#TODO validate the piece and then write @block_storage to a file after each piece is received.
+								#TODO validate the piece before writing @block_storage to a file after each piece is received.
 								puts "RECEIVED ENTIRE PIECE #{piece_index}!!!"
 								@pieces_i_have[piece_index] = 1
 								if @next_piece_to_write_to_file == piece_index
@@ -280,6 +274,7 @@ while true do
 									remaining_size_of_piece = piece_length
 								end
 							end
+
 							#Check if entire torrent is done.
 							if file_currently_downloading == number_of_files
 								if file_length%piece_length != 0 && piece_index == file_length/(piece_length + 1)
@@ -309,7 +304,6 @@ while true do
 							request_block_size = [block_size].pack("N")
 
 							#Send REQUEST message.
-							#if remaining_size_of_piece >= block_size && remaining_size_of_file >= block_size
 							if remaining_size_of_file > block_size	
 								@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
 								puts "Sent request of #{block_size} for piece #{piece_index}"
@@ -318,15 +312,6 @@ while true do
 								@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
 								puts "Sent request of #{remaining_size_of_file} for piece #{piece_index} at block offset #{begin_block}"
 							end
-							#elsif remaining_size_of_file <= block_size && remaining_size_of_file <= remaining_size_of_piece
-							#	request_block_size = [remaining_size_of_file].pack("N")
-							#	@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
-							#	puts "Sent request of #{remaining_size_of_file} for piece #{piece_index}"
-							#elsif remaining_size_of_piece < block_size && remaining_size_of_piece > remaining_size_of_file
-							#	request_block_size = [remaining_size_of_piece].pack("N")
-							#	@connection.write(request_message_length + request_message_id + request_piece_index + request_begin_block + request_block_size)
-							#	puts "Sent request of #{remaining_size_of_piece} for piece #{piece_index}"
-							#end
 						else
 							#Send INTERESTED message to the connected peer.
 							@connection.write("\0\0\0\1\2") #First 4 bytes = 1, meaning length of payload = 1 byte.  5th byte is id = 2, which corresponds to INTERESTED message.
@@ -340,7 +325,6 @@ while true do
 					bitfield_column_that_corresponds_with_piece_index = piece_index%8
 				end
 			end
-			#if @pieces_i_have.length == number_of_pieces
 			if file_length%piece_length > 0
 				if @pieces_i_have == file_length/piece_length + 1
 					@finished = true
@@ -367,5 +351,3 @@ while true do
 		end
 	}
 end
-
-#TODO support torrents with multiple files.
